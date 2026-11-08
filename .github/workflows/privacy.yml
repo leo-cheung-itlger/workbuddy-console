@@ -1,0 +1,41 @@
+name: privacy
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan Git history for credentials
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_ENABLE_COMMENTS: 'false'
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
+      - name: Check private deployment markers without displaying them
+        env:
+          WB_PRIVATE_MARKERS: ${{ secrets.WB_PRIVATE_MARKERS }}
+        shell: bash
+        run: |
+          if [ -z "$WB_PRIVATE_MARKERS" ]; then
+            echo 'Private-marker check skipped: no secret is available for this event.'
+            exit 0
+          fi
+          umask 077
+          markers="$RUNNER_TEMP/wb-private-markers"
+          history="$RUNNER_TEMP/wb-privacy-history"
+          trap 'rm -f "$markers" "$history"' EXIT
+          printf '%s\n' "$WB_PRIVATE_MARKERS" > "$markers"
+          git log --all --format=fuller --patch --no-ext-diff > "$history"
+          if rg --fixed-strings --ignore-case --quiet --file "$markers" "$history"; then
+            echo '::error::Private deployment data detected. Values are withheld.'
+            exit 1
+          else
+            result=$?
+            if [ "$result" -ne 1 ]; then exit "$result"; fi
+          fi
+          echo 'No private deployment markers found in Git history.'

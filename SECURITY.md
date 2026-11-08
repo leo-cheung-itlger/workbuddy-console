@@ -16,6 +16,13 @@ calls and form-field reads, not embedded credentials. Compiled Python files are
 ignored and excluded from release archives. The public repository contains only
 generic code, documentation, tests and deployment templates.
 
+The `privacy` workflow scans complete Git history with a pinned Gitleaks action.
+Maintainers may configure the encrypted repository secret `WB_PRIVATE_MARKERS`
+with newline-separated private hostnames, addresses or contact markers. These
+values are never committed, logged or uploaded as an artifact. Fork pull requests
+cannot access that secret; their generic credential scan still runs. This is an
+additional server-side check, not a substitute for reviewing changes before push.
+
 The application stores metadata only in its ledger. The upstream package may have
 its own diagnostic logs; configure their retention separately and protect their
 state directory. Read-only admin data still contains private account metadata and
