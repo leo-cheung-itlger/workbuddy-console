@@ -1,0 +1,10 @@
+[Unit]
+Description=Passively monitor WorkBuddy once per minute
+
+[Timer]
+OnBootSec=90
+OnUnitActiveSec=60
+Unit=workbuddy-console-watchdog.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>WorkBuddy · 控制台</title>
+    <link rel="stylesheet" href="/console/assets/app.css" />
+    <script src="/console/assets/app.js" defer></script>
+  </head>
+  <body>
+    <div id="notice" role="status" aria-live="polite" hidden></div>
+    <main id="login-view" class="login-shell">
+      <div class="login-brand">
+        <span class="brand-symbol">W</span
+        ><span>WORKBUDDY <small>服务器</small></span>
+      </div>
+      <div class="login-content">
+        <p class="eyebrow">PRIVATE CONSOLE</p>
+        <h1>你的 API，<br />一处掌握。</h1>
+        <p class="muted">查看用量、积分和账户状态。</p>
+        <form id="login-form">
+          <label
+            >用户名<input
+              name="username"
+              value="admin"
+              autocomplete="username"
+              required
+              maxlength="100"
+          /></label>
+          <label
+            >密码<input
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+              maxlength="256"
+          /></label>
+          <p id="login-error" class="error" role="alert"></p>
+          <button class="primary full" type="submit">
+            登录控制台 <span>→</span>
+          </button>
+        </form>
+        <p class="login-note">仅供账户持有人访问 · HTTPS 加密连接</p>
+      </div>
+      <span class="login-foot">服务器 / WorkBuddy Console</span>
+    </main>
+    <div id="workspace" hidden>
+      <aside class="sidebar">
+        <a class="brand" href="/console/"
+          ><span class="brand-symbol">W</span
+          ><span>WorkBuddy<small>控制台</small></span></a
+        >
+        <p class="nav-label">工作空间</p>
+        <nav aria-label="主要导航">
+          <button data-view="overview" class="nav-button active">
+            <span>◫</span>总览
+          </button>
+          <button data-view="requests" class="nav-button">
+            <span>≋</span>调用记录
+          </button>
+          <button data-view="models" class="nav-button">
+            <span>◇</span>模型目录
+          </button>
+          <button data-view="accounts" class="nav-button">
+            <span>◎</span>账户管理
+          </button>
+          <button data-view="keys" class="nav-button">
+            <span>⚿</span>API 密钥
+          </button>
+          <button data-view="mail" class="nav-button">
+            <span>✉</span>邮件告警
+          </button>
+          <button data-view="settings" class="nav-button">
+            <span>⚙</span>设置
+          </button>
+        </nav>
+        <div class="sidebar-bottom">
+          <span class="dot"></span> 服务器 <small>轻量运行 / 本地账本</small>
+        </div>
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <span class="top-label"
+            >个人工作空间 <span>/</span> <b id="breadcrumb">总览</b></span
+          >
+          <div class="top-actions">
+            <span id="freshness">连接中</span
+            ><button id="refresh" class="button small" aria-label="刷新数据">
+              ↻ 刷新</button
+            ><button id="logout" class="text-button">退出</button>
+          </div>
+        </header>
+        <section class="view" id="view-overview">
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">WORKSPACE OVERVIEW</p>
+              <h1>运行总览</h1>
+              <p class="muted">API、签到与积分，随时查看。</p>
+            </div>
+            <span class="badge" id="online-badge">正在查询</span>
+          </div>
+          <div class="stats">
+            <div>
+              <p>今日调用</p>
+              <strong id="stat-requests">—</strong
+              ><small id="stat-success">等待数据</small>
+            </div>
+            <div>
+              <p>今日已知扣费 <span class="unit">积分</span></p>
+              <strong id="stat-credit">—</strong
+              ><small id="stat-unknown">等待上游记录</small>
+            </div>
+            <div>
+              <p>账户积分余额 <span class="unit">积分</span></p>
+              <strong id="stat-balance">—</strong
+              ><small>最近上游查询快照</small>
+            </div>
+            <div>
+              <p>模型目录</p>
+              <strong id="stat-models">—</strong
+              ><small id="stat-accounts">等待账户数据</small>
+            </div>
+          </div>
+          <div class="expiry-strip">
+            <div>
+              <span class="subtle">未来 7 天到期</span
+              ><strong id="expiry-amount">—</strong>
+            </div>
+            <div>
+              <span class="subtle">最近到期</span>
+              <p id="expiry-date">—</p>
+            </div>
+            <div>
+              <span class="subtle">积分批次</span>
+              <p id="expiry-detail">等待查询</p>
+            </div>
+          </div>
+          <div id="ledger-warning" class="alert" hidden>
+            费用账本写入异常，请检查服务器剩余存储。API 仍在转发。
+          </div>
+          <div class="overview-grid">
+            <section class="panel">
+              <div class="section-heading">
+                <h2>服务与签到</h2>
+                <span class="subtle">服务器实时状态</span>
+              </div>
+              <div id="service-list" class="service-list"></div>
+              <div class="schedule">
+                <div>
+                  <span class="subtle">上次定时签到</span>
+                  <p id="last-checkin">—</p>
+                </div>
+                <div>
+                  <span class="subtle">下次计划</span>
+                  <p id="next-checkin">—</p>
+                </div>
+              </div>
+            </section>
+            <section class="panel api-panel">
+              <p class="eyebrow">API CONNECTION</p>
+              <h2>接入你的应用</h2>
+              <label class="subtle">API Base URL</label>
+              <div class="copy-row">
+                <code id="base-url">—</code
+                ><button id="copy-url" class="button small">复制</button>
+              </div>
+              <p class="muted">继续使用现有 API Key，模型名可从目录中复制。</p>
+              <div class="protocols">
+                <span>Chat Completions</span><span>Responses</span
+                ><span>Messages</span>
+              </div>
+              <p class="subtle">目录列出模型不表示每个模型都已实测可用。</p>
+            </section>
+          </div>
+          <section class="panel recent-panel">
+            <div class="section-heading">
+              <h2>最近调用</h2>
+              <button class="text-button" data-open="requests">
+                查看全部 →
+              </button>
+            </div>
+            <div id="recent-requests"></div>
+          </section>
+          <p class="footnote" id="ledger-note">
+            账本从启用后开始记录，保留最近 30 天。
+          </p>
+        </section>
+        <section class="view" id="view-requests" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">REQUEST LEDGER</p>
+              <h1>调用记录</h1>
+              <p class="muted">查看每次调用的账户、Token 和上游实报积分。</p>
+            </div>
+          </div>
+          <div class="filterbar">
+            <label
+              >模型
+              <select id="request-model">
+                <option value="">全部模型</option>
+              </select></label
+            ><span class="subtle" id="request-total">—</span>
+          </div>
+          <section class="panel">
+            <div id="request-table"></div>
+            <div class="pagination">
+              <button id="prev-page" class="button small">← 上一页</button
+              ><span id="page-number">1</span
+              ><button id="next-page" class="button small">下一页 →</button>
+            </div>
+          </section>
+          <p class="footnote">
+            “未知”表示上游没有返回积分。一次调用的多次上游尝试分别记录，展开即可查看；合计仅包含已返回的值。
+          </p>
+        </section>
+        <section class="view" id="view-models" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">MODEL CATALOG</p>
+              <h1>模型目录</h1>
+              <p class="muted">与当前账户的官方客户端目录同步。</p>
+            </div>
+            <button id="sync-models" class="button small">同步官方目录</button>
+          </div>
+          <p id="catalog-source" class="catalog-source subtle">
+            正在查询目录来源…
+          </p>
+          <div id="catalog-warning" class="alert" hidden></div>
+          <div class="benchmark-bar">
+            <button id="update-benchmarks" class="button small">
+              手动更新 LiveBench</button
+            ><label class="button small"
+              >导入评分 JSON<input
+                type="file"
+                id="benchmark-file"
+                accept="application/json"
+                hidden /></label
+            ><select id="model-sort" aria-label="模型排序">
+              <option value="recommended">编程推荐优先</option>
+              <option value="general">通用能力</option>
+              <option value="value">实测性价比</option>
+              <option value="name">模型名称</option></select
+            ><span id="benchmark-date" class="subtle">尚未导入评分</span>
+          </div>
+          <div class="filterbar">
+            <input
+              id="model-search"
+              placeholder="搜索名称或模型 ID"
+              aria-label="搜索模型"
+            /><span class="subtle" id="model-total">—</span>
+          </div>
+          <section class="panel" id="model-table"></section>
+          <p class="footnote">
+            目录每 12
+            小时按需同步；评分仅手动更新，按来源的版本和思考档位对照，未匹配的模型不推定分数。积分单价基于至少
+            3 次本平台实测。
+          </p>
+        </section>
+        <section class="view" id="view-accounts" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">ACCOUNT POOL</p>
+              <h1>账户管理</h1>
+              <p class="muted">关联一次，分别控制模型 API 和自动签到。</p>
+            </div>
+            <button class="button" id="add-account">＋ 添加账户</button>
+          </div>
+          <section class="panel">
+            <div class="section-heading">
+              <h2>账户池</h2>
+              <span class="subtle">登录凭据只保存在服务器</span>
+            </div>
+            <div id="unified-accounts"></div>
+          </section>
+          <section class="panel account-panel">
+            <h2>会话与调度</h2>
+            <form id="routing-form">
+              <div class="form-grid">
+                <label
+                  >新会话分配策略<select name="routing_strategy">
+                    <option value="round_robin">轮询分配</option>
+                    <option value="least_in_flight">最少在途请求</option>
+                    <option value="earliest_expiry">积分最早到期优先</option>
+                    <option value="fixed">固定账户</option>
+                  </select></label
+                ><label
+                  >固定账户<select
+                    name="fixed_account_id"
+                    id="fixed-account"
+                  ></select
+                ></label>
+              </div>
+              <label class="toggle-row"
+                ><input type="checkbox" name="auto_switch_on_429" /><span
+                  >限流时尝试切换同区域可用账户</span
+                ></label
+              ><button class="primary" type="submit">保存策略</button>
+            </form>
+            <p class="footnote">
+              同一会话优先固定账户，以便复用上游缓存。客户端可传 X-Session-ID 或
+              X-Conversation-ID；未提供时按首条用户消息识别。换号后的缓存命中以实测为准。开始输出后不会自动重放请求。
+            </p>
+          </section>
+        </section>
+        <section class="view" id="view-keys" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">CLIENT ACCESS</p>
+              <h1>API 密钥</h1>
+              <p class="muted">每个客户端可使用独立密钥，停用后立即失效。</p>
+            </div>
+            <button id="copy-legacy" class="button">复制原有密钥</button>
+          </div>
+          <section class="panel">
+            <form id="key-form" class="inline-form">
+              <label
+                >名称<input
+                  name="name"
+                  required
+                  maxlength="100"
+                  placeholder="例如：笔记本 Codex" /></label
+              ><label
+                >到期时间（可选）<input
+                  name="expires"
+                  type="datetime-local" /></label
+              ><button class="primary" type="submit">创建密钥</button>
+            </form>
+            <div id="key-list"></div>
+          </section>
+          <p class="footnote">
+            新密钥仅在创建时显示一次；之后保留摘要。控制台登录密码与模型 API
+            密钥分开。
+          </p>
+        </section>
+        <section class="view" id="view-mail" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">NOTIFICATIONS</p>
+              <h1>邮件告警</h1>
+              <p class="muted">签到失败、持续访问异常及恢复通知。</p>
+            </div>
+          </div>
+          <section class="panel settings-panel">
+            <form id="mail-form">
+              <label class="toggle-row"
+                ><input type="checkbox" name="enabled" /><span
+                  >启用邮件通知</span
+                ></label
+              >
+              <div class="form-grid">
+                <label>SMTP 服务器<input name="host" required /></label
+                ><label
+                  >端口<input
+                    name="port"
+                    type="number"
+                    min="1"
+                    max="65535"
+                    required /></label
+                ><label
+                  >连接安全<select name="security">
+                    <option value="ssl">SSL / TLS</option>
+                    <option value="starttls">STARTTLS</option>
+                  </select></label
+                ><label>SMTP 用户名<input name="username" /></label>
+              </div>
+              <label
+                >授权码 / 密码<input
+                  name="password"
+                  type="password"
+                  autocomplete="new-password"
+                  placeholder="留空保留已保存值" /></label
+              ><label
+                >发件邮箱<input
+                  name="from_email"
+                  type="email"
+                  required /></label
+              ><label
+                >收件邮箱（多个用逗号分隔）<input name="recipients" required
+              /></label>
+              <div class="account-actions">
+                <button class="primary" type="submit">保存邮件设置</button
+                ><button class="button" id="mail-test" type="button">
+                  发送测试邮件
+                </button>
+              </div>
+            </form>
+            <p id="mail-status" class="footnote"></p>
+          </section>
+          <p class="footnote">
+            默认不执行消耗积分的定时模型探测。连续真实调用异常触发通知，同类事件去重，恢复后通知一次；限流与账户认证异常分开处理。
+          </p>
+        </section>
+        <section class="view" id="view-settings" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">CONSOLE SETTINGS</p>
+              <h1>设置</h1>
+              <p class="muted">管理控制台登录密码。</p>
+            </div>
+          </div>
+          <section class="panel settings-panel">
+            <h2>修改密码</h2>
+            <p class="muted">
+              修改后，所有已登录设备需要重新登录。API Key 保持原值。
+            </p>
+            <form id="password-form">
+              <label
+                >当前密码<input
+                  name="current"
+                  type="password"
+                  autocomplete="current-password"
+                  required /></label
+              ><label
+                >新密码<input
+                  name="password"
+                  type="password"
+                  minlength="12"
+                  maxlength="128"
+                  autocomplete="new-password"
+                  placeholder="至少 12 个字符"
+                  required /></label
+              ><label
+                >再次输入新密码<input
+                  name="confirm"
+                  type="password"
+                  minlength="12"
+                  autocomplete="new-password"
+                  required /></label
+              ><button class="primary" type="submit">更新密码</button>
+            </form>
+          </section>
+          <p class="footnote">
+            费用账本仅保存调用元数据；控制台不保存提示词、回复或模型 API Key。
+          </p>
+        </section>
+        <footer class="workspace-footer">
+          <span>WorkBuddy Console · 服务器</span
+          ><span>数据以各工具及上游返回为准</span>
+        </footer>
+      </main>
+    </div>
+    <dialog id="login-dialog">
+      <div class="dialog-heading">
+        <h2>关联 WorkBuddy 账户</h2>
+        <button id="close-dialog" class="text-button" aria-label="关闭">
+          ✕
+        </button>
+      </div>
+      <p id="authorization-description" class="muted"></p>
+      <label
+        >区域<select id="login-region">
+          <option value="domestic">国内个人账户</option>
+          <option value="global">国际账户</option>
+        </select></label
+      ><button id="begin-authorization" class="primary full">
+        生成官方授权链接
+      </button>
+      <p id="authorization-status" role="status"></p>
+      <a
+        id="authorization-link"
+        class="button authorization-link"
+        target="_blank"
+        rel="noopener noreferrer"
+        hidden
+        >打开官方授权页面 ↗</a
+      >
+      <p class="subtle">
+        在官方页面选择账号并完成授权，再回到这里。链接约 5 分钟内有效。
+      </p>
+    </dialog>
+    <dialog id="key-dialog">
+      <div class="dialog-heading">
+        <h2>保存新密钥</h2>
+        <button id="close-key-dialog" class="text-button">✕</button>
+      </div>
+      <p class="muted">只显示这一次，请保存到客户端或密码管理器。</p>
+      <input id="new-key-value" readonly aria-label="新密钥" /><button
+        id="copy-new-key"
+        class="primary full"
+      >
+        复制密钥
+      </button>
+    </dialog>
+  </body>
+</html>

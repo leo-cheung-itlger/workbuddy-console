@@ -1,0 +1,27 @@
+[Unit]
+Description=Independent passive API and tunnel email watchdog
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/workbuddy-console/current/app/watchdog.py
+EnvironmentFile=-/etc/workbuddy-console.env
+StateDirectory=workbuddy-watchdog
+StateDirectoryMode=0700
+LoadCredential=smtp-settings:/var/lib/workbuddy-python/mail-alerts-settings.json
+UMask=0077
+TimeoutStartSec=5min
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+MemoryMax=64M
+StandardOutput=null
+StandardError=null

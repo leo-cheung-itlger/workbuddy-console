@@ -1,0 +1,39 @@
+[Unit]
+Description=WorkBuddy Console and unified API account pool
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=workbuddy-python
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/workbuddy-python
+ExecStart=/opt/workbuddy-python/venv/bin/python /opt/workbuddy-console/current/app/launch.py
+Environment=TZ=Asia/Shanghai
+Environment=PYTHONUNBUFFERED=1
+Environment=HOME=/var/lib/workbuddy-python
+EnvironmentFile=-/etc/workbuddy-console.env
+UMask=0077
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=45
+MemoryHigh=192M
+MemoryMax=256M
+TasksMax=128
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target

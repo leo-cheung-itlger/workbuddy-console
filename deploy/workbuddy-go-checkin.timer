@@ -1,0 +1,11 @@
+[Unit]
+Description=Unified WorkBuddy check-in at 09:00 and 21:00 Beijing time
+
+[Timer]
+OnCalendar=*-*-* 09,21:00:00 Asia/Shanghai
+Persistent=true
+RandomizedDelaySec=300
+Unit=workbuddy-go-checkin.service
+
+[Install]
+WantedBy=timers.target

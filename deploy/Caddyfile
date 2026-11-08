@@ -1,0 +1,29 @@
+{
+    admin 127.0.0.1:2019
+    auto_https off
+}
+
+# Intended as a loopback origin for an HTTPS tunnel. Set the tunnel's Host header accordingly.
+http://127.0.0.1:18081 {
+    bind 127.0.0.1
+    @console path /console /console/*
+    handle @console {
+        request_body {
+            max_size 512KB
+        }
+        reverse_proxy 127.0.0.1:8787
+    }
+    @model_api path /v1/models /v1/chat/completions /v1/responses /v1/responses/* /v1/messages /v1/messages/count_tokens
+    handle @model_api {
+        request_body {
+            max_size 16MB
+        }
+        reverse_proxy 127.0.0.1:8787 {
+            flush_interval -1
+        }
+    }
+    handle {
+        respond "Not found" 404
+    }
+    header -Server
+}

@@ -1,0 +1,2 @@
+# Upstream supplies FastAPI, uvicorn, httpx and requests. Keep source pinned.
+workbuddy2api @ git+https://github.com/hawklithm/workbuddy2api.git@d5847723dc95474e2ab56e2aadb2bd1f32cc30ca
