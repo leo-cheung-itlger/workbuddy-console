@@ -31,7 +31,12 @@ jobs:
           trap 'rm -f "$markers" "$history"' EXIT
           printf '%s\n' "$WB_PRIVATE_MARKERS" > "$markers"
           git log --all --format=fuller --patch --no-ext-diff > "$history"
-          if rg --fixed-strings --ignore-case --quiet --file "$markers" "$history"; then
+          if command -v rg >/dev/null 2>&1; then
+            matcher=(rg --fixed-strings --ignore-case --quiet --file)
+          else
+            matcher=(grep -F -i -q -f)
+          fi
+          if "${matcher[@]}" "$markers" "$history"; then
             echo '::error::Private deployment data detected. Values are withheld.'
             exit 1
           else
