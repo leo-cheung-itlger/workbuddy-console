@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import smtplib
+import socket
 import ssl
 import tempfile
 import time
@@ -71,6 +72,14 @@ def _identifier(value):
     return value if isinstance(value, str) and SAFE_ID.fullmatch(value) else 'unknown'
 
 
+def _device_name():
+    configured = os.environ.get('WB_DEVICE_NAME', '').strip()
+    if configured and configured.isprintable() and len(configured) <= 80:
+        return configured
+    hostname = socket.gethostname().strip()
+    return hostname if hostname and hostname.isprintable() and len(hostname) <= 80 else 'unknown-device'
+
+
 def smtp_send(config, message):
     """TLS is mandatory and uses the system CA store and hostname verification."""
     context = ssl.create_default_context()
@@ -105,6 +114,7 @@ class AlertManager:
         self._state = _load(self.state_path, {'incidents': {}, 'outbox': [], 'delivery': {'status': 'idle'}})
         self._sender = sender or smtp_send
         self._clock = clock or time.time
+        self._device_name = _device_name()
         self._worker = None
         self._send_lock = asyncio.Lock()
         changed = False
@@ -197,11 +207,11 @@ class AlertManager:
             if not config['enabled']:
                 return {'ok': False, 'status': 'disabled'}
             message = EmailMessage()
-            message['Subject'] = item['subject']
+            message['Subject'] = f'[{self._device_name}] {item["subject"]}'
             message['From'] = config['from_email']
             message['To'] = ', '.join(config['to_emails'])
             message['Message-ID'] = '<' + item['id'] + '@workbuddy-console.local>'
-            message.set_content(item['body'])
+            message.set_content(f'device: {self._device_name}\n{item["body"]}')
             item['status'] = 'sending'
             self._save()
             try:

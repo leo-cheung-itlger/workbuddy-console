@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 
 class MailAlertTests(unittest.IsolatedAsyncioTestCase):
@@ -127,7 +128,8 @@ class MailAlertTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('Authorization', persisted)
 
     async def test_checkin_groups_accounts_and_service_recovery(self):
-        manager = self.manager()
+        with patch.dict(os.environ, {'WB_DEVICE_NAME': 'Server A'}):
+            manager = self.manager()
         self.enable(manager)
         rows = [{'account_id': 'a', 'ok': False}, {'account_id': 'b', 'ok': False}]
         await manager.observe_checkin(rows)
@@ -139,6 +141,9 @@ class MailAlertTests(unittest.IsolatedAsyncioTestCase):
         await manager.check_services({'python': True})
         await manager.flush()
         self.assertEqual(len(self.sent), 5)
+        for _, message in self.sent:
+            self.assertTrue(message['Subject'].startswith('[Server A] '))
+            self.assertIn('device: Server A\n', message.get_content())
 
     async def test_smtp_failure_is_safe_and_api_observation_does_not_block(self):
         started, release = threading.Event(), threading.Event()
@@ -183,7 +188,8 @@ class MailAlertTests(unittest.IsolatedAsyncioTestCase):
             started.set()
             release.wait(2)
             self.deliver(config, message)
-        manager = self.manager(slow_sender)
+        with patch.dict(os.environ, {'WB_DEVICE_NAME': ''}), patch('socket.gethostname', return_value='server-b'):
+            manager = self.manager(slow_sender)
         self.enable(manager)
         for _ in range(3):
             await self.observe(manager)
@@ -194,6 +200,9 @@ class MailAlertTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue((await test_task)['ok'])
         await manager.flush()
         self.assertEqual(len(self.sent), 2)
+        for _, message in self.sent:
+            self.assertTrue(message['Subject'].startswith('[server-b] '))
+            self.assertIn('device: server-b\n', message.get_content())
 
 
 if __name__ == '__main__':
