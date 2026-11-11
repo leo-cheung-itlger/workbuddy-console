@@ -43,7 +43,7 @@ def main():
     proxy.app.add_middleware(APIKeyGuard,key_file=root/'api-key',keys=keys)
     console=create_console(root,backend,ledger)
     proxy.app.add_middleware(ConsoleDispatch,console=console)
-    proxy.app.add_middleware(InternalTasks,root=root,accounts=accounts,alerts=alerts)
+    proxy.app.add_middleware(InternalTasks,root=root,accounts=accounts,alerts=alerts,schedule=backend.checkin_schedule)
     install_workers(proxy,accounts,backend,alerts)
     proxy.ObservedTimedRotatingFileHandler=BoundedLogHandler
     sys.argv=[sys.argv[0],'--host',HOST,'--port',str(PORT),'--accounts-dir',str(root/'accounts'),

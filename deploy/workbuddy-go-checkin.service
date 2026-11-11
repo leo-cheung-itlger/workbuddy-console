@@ -1,11 +1,11 @@
 # Keep the existing timer/service name for in-place upgrades; credentials live in Python only.
 [Unit]
 Description=Unified WorkBuddy account daily check-in
-Requires=workbuddy-python.service
 After=workbuddy-python.service network-online.target
 
 [Service]
 Type=oneshot
+ExecCondition=/usr/bin/systemctl is-active --quiet workbuddy-python.service
 ExecStart=/usr/bin/python3 /opt/workbuddy-console/current/app/checkin_task.py
 EnvironmentFile=-/etc/workbuddy-console.env
 UMask=0077

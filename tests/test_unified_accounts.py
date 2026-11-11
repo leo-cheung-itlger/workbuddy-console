@@ -95,6 +95,39 @@ class UnifiedAccountsTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('https://', raw)
         self.assertNotIn('Authorization', raw)
 
+    async def test_checkin_schedule_settings_validate_and_survive_restart(self):
+        await self.registry.action(dict(action='settings', checkin_time='10:30', checkin_jitter_minutes=7))
+        restored = UnifiedAccounts(self.proxy, self.tmp.name)
+        settings = (await restored.snapshot())['settings']
+        self.assertEqual(settings['checkin_time'], '10:30')
+        self.assertEqual(settings['checkin_jitter_minutes'], 7)
+        for update in [{'checkin_time': '25:00'}, {'checkin_time': '9:30'},
+                       {'checkin_jitter_minutes': -1}, {'checkin_jitter_minutes': True}]:
+            with self.subTest(update=update), self.assertRaises(ValueError):
+                await self.registry.action(dict(action='settings', **update))
+
+    async def test_checkin_failure_rechecks_real_upstream_status_before_alerting(self):
+        from codebuddy_proxy.account_checkin import AccountCheckinService
+        reads = 0
+        posts = 0
+        async def request(client, method, path):
+            nonlocal reads, posts
+            if path.endswith('/daily-checkin'):
+                posts += 1
+                return JSONResponse({}, status_code=500)
+            reads += 1
+            return JSONResponse(dict(code=0, data=dict(active=True, today_checked_in=reads > 1)))
+        self.manager.checkins = AccountCheckinService(self.manager, requester=request)
+        await self.registry.action(dict(action='flags', id='b', checkin_enabled=False))
+        await self.registry.action(dict(action='flags', id='c', checkin_enabled=False))
+        result = await self.registry.checkin_all()
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['accounts'][0]['checkin']['status'], 'checked')
+        self.assertEqual(posts, 1)
+        self.assertEqual(reads, 2)
+        self.assertEqual((await self.registry.checkin('a'))['status'], 'checked')
+        self.assertEqual(posts, 1)
+
     async def test_sticky_round_robin_flags_and_no_global_activation(self):
         await self.chat('one')
         await self.chat('two')

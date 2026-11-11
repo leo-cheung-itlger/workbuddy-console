@@ -6,6 +6,8 @@ import time
 from urllib.parse import urlsplit
 
 from config import API_BASE, STATUS_FILE
+from checkin_result import checkin_succeeded
+from checkin_schedule import CheckinSchedule
 
 
 def safe_auth_url(value):
@@ -20,6 +22,7 @@ class Backend:
     def __init__(self,root,catalog,accounts,ledger,keys,alerts,benchmarks):
         self.root,self.catalog,self.accounts=Path(root),catalog,accounts
         self.ledger,self.keys,self.alerts,self.benchmarks=ledger,keys,alerts,benchmarks
+        self.checkin_schedule = CheckinSchedule(root, accounts, alerts)
 
     def observed_costs(self):
         with self.ledger.lock:
@@ -45,6 +48,7 @@ class Backend:
         units=await self.units()
         return {'updated_at':time.time(),'base_url':API_BASE,'accounts':accounts['accounts'],
                 'routing':accounts.get('settings',{}),'units':units,'mail':self.alerts.settings(),
+                'checkin_schedule':self.checkin_schedule.snapshot(accounts.get('settings', {})),
                 'version':'2.0.0','benchmark_updated_at':self.benchmarks.snapshot()['updated_at']}
 
     async def action(self,data):
@@ -63,7 +67,7 @@ class Backend:
             return {'id':identifier,'status':job.get('status'),'url':safe_auth_url(job.get('auth_url'))}
         result=await self.accounts.action(data)
         if action=='checkin':
-            ok=result.get('status')=='checked'
+            ok=checkin_succeeded(result)
             await self.alerts.observe_checkin([{'account_id':data.get('id'),'ok':ok}])
             if not ok:raise ValueError('签到结果尚未确认，请检查账户状态')
         return result

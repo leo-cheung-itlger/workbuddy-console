@@ -29,12 +29,14 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         calls=[]
         async def checkin():calls.append(True);return {'ok':True,'accounts':[{'id':'a','checkin':{'status':'checked'}}]}
         async def observe(rows):calls.append(rows)
+        async def due():calls.append('due');return {'ok':True,'skipped':True}
         with tempfile.TemporaryDirectory() as tmp:
-            wrapped=InternalTasks(None,Path(tmp),types.SimpleNamespace(checkin_all=checkin),types.SimpleNamespace(observe_checkin=observe))
-            async def invoke(peer,headers):
+            wrapped=InternalTasks(None,Path(tmp),types.SimpleNamespace(checkin_all=checkin),
+                                  types.SimpleNamespace(observe_checkin=observe),types.SimpleNamespace(run_due=due))
+            async def invoke(peer,headers,path='/internal/checkin-all'):
                 output=[]
                 async def send(message):output.append(message)
-                await wrapped({'type':'http','path':'/internal/checkin-all','method':'POST','client':(peer,1),'headers':headers},None,send)
+                await wrapped({'type':'http','path':path,'method':'POST','client':(peer,1),'headers':headers},None,send)
                 return output[0]['status']
             auth=[(b'authorization',b'Bearer '+wrapped.key)]
             self.assertEqual(await invoke('127.0.0.1',[]),403)
@@ -43,6 +45,9 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(calls,[])
             self.assertEqual(await invoke('127.0.0.1',auth),200)
             self.assertEqual(calls[-1],[{'account_id':'a','ok':True}])
+            self.assertEqual(await invoke('127.0.0.1',[],'/internal/checkin-due'),403)
+            self.assertEqual(await invoke('127.0.0.1',auth,'/internal/checkin-due'),200)
+            self.assertEqual(calls[-1],'due')
 
 
 if __name__=='__main__':unittest.main()

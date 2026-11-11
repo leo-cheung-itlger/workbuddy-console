@@ -213,6 +213,7 @@ async function refresh() {
     state.rows = requests.rows;
     renderOverview();
     renderAccounts();
+    renderCheckinSettings();
     renderModels();
     renderRequests($("recent-requests"), state.rows.slice(0, 5), true);
     set("freshness", "更新于 " + time(snapshot.updated_at).slice(-8));
@@ -315,19 +316,16 @@ function renderOverview() {
       ]),
     );
   }
-  const timer = s.units["workbuddy-go-checkin.timer"] || {},
-    check = s.units["workbuddy-go-checkin.service"] || {};
+  const checkin = s.checkin_schedule || {};
   set(
     "last-checkin",
-    check.ExecMainExitTimestamp
-      ? `${time(check.ExecMainExitTimestamp)} · ${check.Result === "success" && check.ExecMainStatus === "0" ? "执行成功" : "请检查结果"}`
+    checkin.last_run_at
+      ? `${time(checkin.last_run_at)} · ${checkin.last_success ? "执行成功" : "请检查结果"}`
       : "暂无定时执行记录",
   );
   set(
     "next-checkin",
-    timer.ActiveState === "active"
-      ? time(timer.NextElapseUSecRealtime)
-      : "定时任务未启用",
+    checkinPlanText(s),
   );
   set(
     "ledger-note",
@@ -687,6 +685,47 @@ function renderAccounts() {
     );
   select.value = s.routing?.fixed_account_id || "";
 }
+function checkinPlanText(snapshot) {
+  if (snapshot.routing?.auto_checkin_enabled === false) return "自动签到已关闭";
+  const timer = snapshot.units?.["workbuddy-go-checkin.timer"];
+  if (timer?.ActiveState && timer.ActiveState !== "active") return "签到定时器未运行";
+  const next = snapshot.checkin_schedule?.next_checkin_at;
+  return next ? time(next) : "等待排程";
+}
+function renderCheckinSettings() {
+  const form = $("checkin-form");
+  const settings = state.snapshot.routing || {};
+  if (!form.dataset.dirty) {
+    form.elements.auto_checkin_enabled.checked = settings.auto_checkin_enabled !== false;
+    form.elements.checkin_time.value = settings.checkin_time || "10:00";
+    form.elements.checkin_jitter_minutes.value = settings.checkin_jitter_minutes ?? 5;
+  }
+  set("checkin-plan", `下次签到 · ${checkinPlanText(state.snapshot)}`);
+}
+$("checkin-form").addEventListener("input", (event) => {
+  event.currentTarget.dataset.dirty = "true";
+});
+$("checkin-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    await api("action", {
+      action: "settings",
+      auto_checkin_enabled: form.elements.auto_checkin_enabled.checked,
+      checkin_time: form.elements.checkin_time.value,
+      checkin_jitter_minutes: form.elements.checkin_jitter_minutes.valueAsNumber,
+    });
+    delete form.dataset.dirty;
+    await refresh();
+    toast("签到设置已保存");
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
 $("routing-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const f = event.currentTarget;

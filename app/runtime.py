@@ -8,6 +8,7 @@ from pathlib import Path
 import secrets
 
 from unified_accounts import request_session,request_namespace
+from checkin_schedule import run_checkin_batch
 
 
 def alert_result(row):
@@ -37,8 +38,9 @@ class SessionBinding:
 
 
 class InternalTasks:
-    def __init__(self,app,root,accounts,alerts):
+    def __init__(self,app,root,accounts,alerts,schedule=None):
         self.app,self.accounts,self.alerts=app,accounts,alerts
+        self.schedule=schedule
         path=Path(root)/'internal-key'
         if not path.exists():
             with open(path,'w') as stream:
@@ -54,18 +56,13 @@ class InternalTasks:
         except (KeyError,ValueError,TypeError):loopback=False
         forwarded=any(k.lower() in (b'cf-connecting-ip',b'x-forwarded-for',b'origin') for k,v in scope.get('headers',[]))
         if loopback and not forwarded and len(values)==1 and hmac.compare_digest(values[0],b'Bearer '+self.key):
-            if scope.get('method')=='POST' and scope['path']=='/internal/checkin-all':
-                try:
-                    result=await self.accounts.checkin_all()
-                    if not result.get('ok'):
-                        await asyncio.sleep(5)
-                        result=await self.accounts.checkin_all()
-                    observations=[{'account_id':row.get('id'),'ok':row.get('checkin',{}).get('status')=='checked'}
-                                  for row in result.get('accounts',[])]
-                    await self.alerts.observe_checkin(observations)
-                    body=result;status=200
-                except Exception:body={'ok':False,'error':'签到任务失败'};status=502
-            else:status=404;body={'error':'Not found'}
+            try:
+                if scope.get('method')=='POST' and scope['path']=='/internal/checkin-due' and self.schedule:
+                    body=await self.schedule.run_due();status=200
+                elif scope.get('method')=='POST' and scope['path']=='/internal/checkin-all':
+                    body=await run_checkin_batch(self.accounts,self.alerts);status=200
+                else:status=404;body={'error':'Not found'}
+            except Exception:body={'ok':False,'error':'签到任务失败'};status=502
         raw=json.dumps(body).encode()
         await send({'type':'http.response.start','status':status,'headers':[(b'content-type',b'application/json')]})
         await send({'type':'http.response.body','body':raw})

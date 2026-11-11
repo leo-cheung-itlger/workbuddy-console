@@ -15,6 +15,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path
 import threading
 import time
@@ -23,6 +24,7 @@ import uuid
 from fastapi import HTTPException
 from starlette.responses import StreamingResponse
 import httpx
+from checkin_result import checkin_succeeded
 
 
 request_session: ContextVar[str | None] = ContextVar('unified_account_session', default=None)
@@ -69,7 +71,8 @@ class UnifiedAccounts:
         self._installed = False
         self._state = dict(version=1, accounts={}, cooldowns={}, resources={},
                            settings=dict(routing_strategy='round_robin', fixed_account_id=None,
-                                         auto_switch_on_429=True, auto_checkin_enabled=True))
+                                         auto_switch_on_429=True, auto_checkin_enabled=True,
+                                         checkin_time='10:00', checkin_jitter_minutes=5))
         try:
             raw = json.loads(self.path.read_text(encoding='utf-8'))
         except FileNotFoundError:
@@ -81,6 +84,8 @@ class UnifiedAccounts:
                 if not isinstance(raw.get(field), dict):
                     raise ValueError('统一账号设置格式无效，原文件未修改')
             self._state = raw
+            raw['settings'].setdefault('checkin_time', '10:00')
+            raw['settings'].setdefault('checkin_jitter_minutes', 5)
             if raw['settings'].get('routing_strategy') not in STRATEGIES:
                 raise ValueError('选号策略无效')
             for item in raw['accounts'].values():
@@ -200,13 +205,18 @@ class UnifiedAccounts:
             with self._lock:
                 previous = dict(self._state['settings'])
                 updated = dict(previous)
-                for key in ('routing_strategy', 'fixed_account_id', 'auto_switch_on_429', 'auto_checkin_enabled'):
+                for key in ('routing_strategy', 'fixed_account_id', 'auto_switch_on_429', 'auto_checkin_enabled',
+                            'checkin_time', 'checkin_jitter_minutes'):
                     if key in data:
                         updated[key] = data[key]
                 if updated['routing_strategy'] not in STRATEGIES:
                     raise ValueError('选号策略无效')
                 if any(type(updated[key]) is not bool for key in ('auto_switch_on_429', 'auto_checkin_enabled')):
                     raise ValueError('设置开关必须为布尔值')
+                if not isinstance(updated['checkin_time'], str) or not re.fullmatch(r'(?:[01][0-9]|2[0-3]):[0-5][0-9]', updated['checkin_time']):
+                    raise ValueError('签到时间需为 00:00 至 23:59')
+                if type(updated['checkin_jitter_minutes']) is not int or not 0 <= updated['checkin_jitter_minutes'] <= 1440:
+                    raise ValueError('随机浮动需为 0 至 1440 的整数分钟')
                 if updated.get('fixed_account_id') is not None and updated['fixed_account_id'] not in accounts:
                     raise ValueError('固定账号不存在')
                 if updated['routing_strategy'] == 'fixed' and not updated.get('fixed_account_id'):
@@ -405,7 +415,20 @@ class UnifiedAccounts:
         with self._lock:
             if not self._state['accounts'][identifier]['checkin_enabled']:
                 raise ValueError('此账号未启用签到')
-        return await self.manager.checkins.check_in(identifier, reason='manual')
+        return await self._checkin_confirmed(identifier, reason='manual')
+
+    async def _checkin_confirmed(self, identifier, reason):
+        service = self.manager.checkins
+        result = await service.check_in(identifier, reason=reason)
+        if not checkin_succeeded(result) and callable(getattr(service, 'check_status', None)):
+            # A rejected/uncertain POST can still have completed, including a
+            # concurrent manual check-in. Verify without repeating that POST.
+            confirmed = await service.check_status(identifier, reason=reason)
+            if checkin_succeeded(confirmed):
+                result = confirmed
+        if checkin_succeeded(result):
+            return {**result, 'status': 'checked', 'checked': True, 'error': None}
+        return result
 
     async def checkin_all(self):
         async with self._checkin_lock:
@@ -420,11 +443,11 @@ class UnifiedAccounts:
                 if not enabled:
                     continue
                 try:
-                    checked = await self.manager.checkins.check_in(identifier, reason='timer')
+                    checked = await self._checkin_confirmed(identifier, reason='timer')
                     result.append(dict(id=identifier, checkin=checked))
                 except Exception:
                     result.append(dict(id=identifier, checkin=dict(status='error', error='签到请求失败')))
-            return dict(ok=all(a['checkin'].get('status') == 'checked' for a in result), accounts=result)
+            return dict(ok=all(checkin_succeeded(a['checkin']) for a in result), accounts=result)
 
     async def refresh_balance(self, identifier):
         snapshot = await asyncio.to_thread(self._accounts)

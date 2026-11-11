@@ -396,9 +396,25 @@
             <div>
               <p class="eyebrow">CONSOLE SETTINGS</p>
               <h1>设置</h1>
-              <p class="muted">管理控制台登录密码。</p>
+              <p class="muted">管理自动签到和控制台登录密码。</p>
             </div>
           </div>
+          <section class="panel settings-panel">
+            <h2>每日自动签到</h2>
+            <form id="checkin-form">
+              <label class="toggle-row">
+                <input type="checkbox" name="auto_checkin_enabled" />
+                <span>启用自动签到</span>
+              </label>
+              <div class="form-grid">
+                <label>签到时间（北京时间）<input name="checkin_time" type="time" step="60" required /></label>
+                <label>前后随机浮动（分钟）<input name="checkin_jitter_minutes" type="number" min="0" max="1440" step="1" required /></label>
+              </div>
+              <p class="muted">每天在设定时间前后选一个时间，对开启签到的账户执行。填 0 表示固定时间。</p>
+              <p id="checkin-plan" class="footnote"></p>
+              <button class="primary" type="submit">保存签到设置</button>
+            </form>
+          </section>
           <section class="panel settings-panel">
             <h2>修改密码</h2>
             <p class="muted">

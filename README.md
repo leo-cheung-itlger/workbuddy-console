@@ -37,6 +37,8 @@ API Base URL 为 `https://console.example.com/v1`；不要把管理页以无认�
 模板使用 `/opt/workbuddy-console/current/app/` 和 `/opt/workbuddy-python/venv/`；按安装位置调整。
 在 `/etc/workbuddy-console.env` 设置 `.env.example` 中的部署参数。
 `workbuddy-go-checkin` 的名称用于兼容旧部署，实际执行 `app/checkin_task.py`，完全不依赖 Go。
+启用 `workbuddy-go-checkin.timer` 后，在“设置 → 每日自动签到”选择北京时间与前后随机浮动分钟数。默认 10:00 前后 5 分钟，填 0 可固定时间。每天选定一次时间，保存计划以便重启后沿用。当天已执行则新时间从下一个签到日生效，停机错过时间则恢复后补做当天计划。
+已确认当天签到的账户按成功处理。提交结果不明确时先复核今日状态，再决定是否发告警。旧部署升级时应同时更新签到 timer 并重启它，使旧的固定时刻安排切换为每分钟检查计划。
 启用 `workbuddy-console-status.timer` 后控制台才显示 systemd 运行状态。
 配置邮件并成功发送测试邮件后，可启用 `workbuddy-console-watchdog.timer`。独立看门狗
 通过 systemd 凭据读取 SMTP 设置，在 API 进程停止时仍能通知；它只检查健康和服务状态。
