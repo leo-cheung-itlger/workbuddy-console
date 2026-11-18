@@ -137,13 +137,87 @@ class MailAlertTests(unittest.IsolatedAsyncioTestCase):
         await manager.flush()
         self.assertEqual(len(self.sent), 2)
         await manager.observe_checkin([{'account_id': 'a', 'ok': True}])
-        await manager.check_services({'python': False})
-        await manager.check_services({'python': True})
+        for _ in range(3):
+            await manager.check_services({'python': False, 'api-health': False})
+            self.now += 60
+        for _ in range(2):
+            await manager.check_services({'python': True, 'api-health': True})
+            self.now += 60
         await manager.flush()
         self.assertEqual(len(self.sent), 5)
         for _, message in self.sent:
             self.assertTrue(message['Subject'].startswith('[Server A] '))
             self.assertIn('device: Server A\n', message.get_content())
+
+    async def test_service_restart_is_silent_and_sustained_outage_is_one_incident(self):
+        manager = self.manager()
+        self.enable(manager)
+        await manager.check_services({'python': False, 'api-health': False})
+        self.now += 60
+        await manager.check_services({'python': True, 'api-health': True})
+        await manager.flush()
+        self.assertEqual(self.sent, [])
+        for _ in range(3):
+            self.now += 60
+            manager = self.manager()
+            await manager.check_services({'python': False, 'api-health': False})
+            await manager.flush()
+        self.assertEqual(len(self.sent), 1)
+        self.assertIn('python', self.sent[0][1].get_content())
+        self.assertIn('api-health', self.sent[0][1].get_content())
+        self.now += 60
+        await manager.check_services({'python': True, 'api-health': True})
+        self.now += 60
+        await manager.check_services({'python': False, 'api-health': False})
+        await manager.flush()
+        self.assertEqual(len(self.sent), 1)
+        for _ in range(3):
+            self.now += 60
+            await manager.check_services({'python': False, 'api-health': True})
+        await manager.flush()
+        self.assertEqual(len(self.sent), 1)
+        self.now += 3601
+        for _ in range(3):
+            self.now += 60
+            await manager.check_services({'python': False, 'api-health': True})
+        await manager.flush()
+        self.assertEqual(len(self.sent), 1)
+        for _ in range(2):
+            self.now += 60
+            await manager.check_services({'python': True, 'api-health': True})
+        await manager.flush()
+        self.assertEqual(len(self.sent), 2)
+        self.assertIn('Recovered', self.sent[-1][1]['Subject'])
+        self.assertEqual(manager.settings()['active_incidents'], 0)
+
+    async def test_old_active_service_incidents_merge_and_sampling_gap_resets_confirmation(self):
+        manager = self.manager()
+        self.enable(manager)
+        for name in ('python', 'api-health'):
+            scope = json.dumps(['service', name, ''], separators=(',', ':'))
+            key = json.dumps(['service', name, '', 'service_unavailable'], separators=(',', ':'))
+            manager._state['incidents'][key] = {'scope': scope, 'category': 'service_unavailable',
+                'active': True, 'events': [self.now], 'last_notified': self.now}
+        manager._save()
+        manager = self.manager()
+        for _ in range(3):
+            self.now += 60
+            await manager.check_services({'python': False, 'api-health': False})
+        await manager.flush()
+        self.assertEqual(self.sent, [])
+        for _ in range(2):
+            self.now += 60
+            await manager.check_services({'python': True, 'api-health': True})
+        await manager.flush()
+        self.assertEqual(len(self.sent), 1)
+        self.assertIn('Recovered', self.sent[0][1]['Subject'])
+        for _ in range(2):
+            self.now += 60
+            await manager.check_services({'python': False})
+        self.now += 600
+        await manager.check_services({'python': False})
+        await manager.flush()
+        self.assertEqual(len(self.sent), 1)
 
     async def test_smtp_failure_is_safe_and_api_observation_does_not_block(self):
         started, release = threading.Event(), threading.Event()

@@ -182,15 +182,18 @@ class AlertManager:
         self._state['outbox'] = self._state['outbox'][-200:]
         _atomic_json(self.state_path, self._state)
 
-    def _queue(self, category, scope, recovered=False, code=''):
+    def _queue(self, category, scope, recovered=False, code='', checks=None):
         if not self._config['enabled']:
             return
         kind = 'Recovered' if recovered else 'Warning'
+        lines = [kind, 'category: ' + category, 'scope: ' + scope]
+        if code:
+            lines.append('business_code: ' + code)
+        if checks:
+            lines.append('affected_checks: ' + ', '.join(checks))
         item = {'id': uuid.uuid4().hex, 'status': 'queued', 'created_at': self._clock(),
                 'subject': 'WorkBuddy ' + kind + ': ' + category,
-                'body': '\n'.join([kind, 'category: ' + category, 'scope: ' + scope,
-                                   'business_code: ' + code] if code else
-                                  [kind, 'category: ' + category, 'scope: ' + scope])}
+                'body': '\n'.join(lines)}
         self._state['outbox'].append(item)
         self._save()
         self._start_worker()
@@ -247,19 +250,21 @@ class AlertManager:
         self._state['outbox'].append(item)
         return await self._deliver(item)
 
-    def _record(self, kind, account, model, category, code='', immediate=False):
+    def _record(self, kind, account, model, category, code='', immediate=False, checks=None):
         now = self._clock()
         scope = json.dumps([kind, account, model], separators=(',', ':'))
         key = json.dumps([kind, account, model, category], separators=(',', ':'))
         incident = self._state['incidents'].setdefault(key, {
             'scope': scope, 'category': category, 'active': False, 'events': [], 'last_notified': None})
+        if checks is not None:
+            incident['checks'] = checks
         incident['events'] = [stamp for stamp in incident['events'] if now - stamp <= self.window][-19:] + [now]
         if len(incident['events']) >= self.threshold or immediate:
             last = incident['last_notified']
             incident['active'] = True
             if self._config['enabled'] and (last is None or now - last >= self.cooldown):
                 incident['last_notified'] = now
-                self._queue(category, scope, code=code)
+                self._queue(category, scope, code=code, checks=incident.get('checks'))
         self._save()
 
     def _recover(self, kind, account, model):
@@ -270,7 +275,7 @@ class AlertManager:
             notified = incident['active'] and incident['last_notified'] is not None
             incident.update(active=False, events=[], last_notified=None)
             if notified:
-                self._queue(incident['category'], scope, recovered=True)
+                self._queue(incident['category'], scope, recovered=True, checks=incident.get('checks'))
         self._save()
 
     async def observe(self, result):
@@ -324,14 +329,43 @@ class AlertManager:
                 self._record('checkin', account, '', 'checkin_failure', immediate=True)
 
     async def check_services(self, results=None):
-        """Accept health booleans supplied by root; never query privileged state."""
-        if not isinstance(results, dict):
+        """Confirm persistent failure and stable recovery for one deployment."""
+        if not isinstance(results, dict) or not results or any(type(value) is not bool for value in results.values()):
             return
-        for service, healthy in results.items():
-            if healthy is True:
-                self._recover('service', _identifier(service), '')
-            elif healthy is False:
-                self._record('service', _identifier(service), '', 'service_unavailable', immediate=True)
+        scope = json.dumps(['service', 'deployment', ''], separators=(',', ':'))
+        key = json.dumps(['service', 'deployment', '', 'service_unavailable'], separators=(',', ':'))
+        incidents = self._state['incidents']
+        # Preserve notification history when older per-check incidents are merged.
+        for old_key, old in list(incidents.items()):
+            if old_key == key or json.loads(old['scope'])[0] != 'service':
+                continue
+            if old['active']:
+                merged = incidents.setdefault(key, {'scope': scope, 'category': 'service_unavailable',
+                    'active': True, 'events': [], 'last_notified': None, 'checks': []})
+                merged['active'] = True
+                notified = [value for value in (merged['last_notified'], old['last_notified']) if value is not None]
+                merged['last_notified'] = min(notified) if notified else None
+                merged['checks'] = sorted(set(merged.get('checks', []) + [_identifier(json.loads(old['scope'])[1])]))
+            del incidents[old_key]
+        health = self._state.setdefault('service_health', {'failures': 0, 'successes': 0})
+        now = self._clock()
+        previous = health.get('last_check_at')
+        if previous is not None and not 0 <= now - previous <= 180:
+            health.update(failures=0, successes=0)
+        health['last_check_at'] = now
+        failed = sorted({_identifier(name) for name, healthy in results.items() if not healthy})
+        incident = incidents.get(key)
+        if failed:
+            health['successes'] = 0
+            health['failures'] = min(3, health['failures'] + 1)
+            if health['failures'] >= 3 and not (incident and incident['active']):
+                self._record('service', 'deployment', '', 'service_unavailable', immediate=True, checks=failed)
+        else:
+            health['failures'] = 0
+            health['successes'] = min(2, health['successes'] + 1)
+            if health['successes'] >= 2:
+                self._recover('service', 'deployment', '')
+        self._save()
 
     async def run(self, check_services=None, interval=60):
         """Run optional ordinary health callback only; no model inference probes."""

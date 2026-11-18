@@ -3,6 +3,7 @@ import copy
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -258,7 +259,8 @@ class UnifiedAccountsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.calls, ['a'])
         self.assertEqual((await self.registry.snapshot())['accounts'][0]['in_flight'], 0)
 
-    async def test_resource_refresh_paginates_deduplicates_and_preserves_old_expiry_on_failure(self):
+    @patch('unified_accounts.time.time', return_value=1768003200)
+    async def test_resource_refresh_paginates_deduplicates_and_preserves_old_expiry_on_failure(self, _clock):
         import time
         soon = time.time() + 3600
         calls = []
